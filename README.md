@@ -1,4 +1,4 @@
-# Autonomous Drone Landing on a Moving Rover
+# Autonomous Drone Landing on Dynamic Platforms
 
 A flight controller that makes a quadcopter find a moving rover, follow it, and land on it. The rover carries an ArUco marker, and the drone tracks that marker with its downward camera.
 
