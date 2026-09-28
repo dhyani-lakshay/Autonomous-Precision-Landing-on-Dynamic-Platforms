@@ -142,6 +142,13 @@
   p code, td code, li code { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
 
   video { display: block; width: 100%; border-radius: 6px; background: #000; }
+
+  .flowchart { max-width: 820px; margin: 24px 0 0; }
+  .flowchart a { display: block; }
+  .flowchart img {
+    display: block; width: 100%; height: auto;
+    background: #fff; border: 1px solid var(--line); border-radius: 6px;
+  }
   .note { font-size: .9rem; color: var(--muted); }
 
   footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--muted); font-size: .9rem; }
@@ -164,6 +171,7 @@
     <span class="name">Precision Landing</span>
     <nav aria-label="Sections">
       <a href="#landing">The landing</a>
+      <a href="#algorithm">Algorithm</a>
       <a href="#vision">Vision</a>
       <a href="#control">Control</a>
       <a href="#results">Results</a>
@@ -180,7 +188,7 @@
       <div class="actions">
         <a class="btn primary" href="#demo">Watch the demo</a>
         <a class="btn" href="Autonomous_Precision_Landing_Technical_Report.pdf">Read the report</a>
-        <a class="btn" href="https://github.com/YOUR-USERNAME/YOUR-REPO">View the code</a>
+        <a class="btn" href="https://github.com/dhyani-lakshay/Autonomous-Precision-Landing-on-Dynamic-Platforms">View the code</a>
       </div>
     </div>
 
@@ -232,6 +240,21 @@
         <figcaption class="caption" style="margin-top:8px">Height reference over one landing. Touchdown comes at about 7.4 s, arriving at 0.35 m/s against a 0.65 m/s limit.</figcaption>
       </figure>
     </div>
+  </section>
+
+  <!-- ======================= ALGORITHM ======================= -->
+  <section id="algorithm">
+    <h2>The whole algorithm in one picture</h2>
+    <div class="prose">
+      <p>Everything the controller does in a single 1/240 s step, from reading the camera to sending four motor forces back to the simulator. The side panels hold the equations and thresholds used at each step. The loop on the left repeats 240 times a second.</p>
+    </div>
+    <figure class="flowchart">
+      <a href="ai_generated_algorithm_visual.png" target="_blank" rel="noopener">
+        <img src="ai_generated_algorithm_visual.png" loading="lazy" decoding="async"
+             alt="Flowchart of one control step: inputs from the simulator, cutoff check, angular velocity, wind estimation, Kalman prediction, camera model, ArUco or template detection, Mahalanobis check, Kalman correction, flight-mode update, height reference, horizontal and vertical control, desired force, thrust direction, desired attitude, and motor mixing, then back to the start.">
+      </a>
+      <figcaption class="caption" style="margin-top:8px">One control cycle of <code>calculate_forces()</code>. AI-generated illustration; click to open it full size.</figcaption>
+    </figure>
   </section>
 
   <!-- ======================= VISION ======================= -->
@@ -350,7 +373,7 @@ python local_areana_wind.py    # random wind gusts</code></pre>
       <p>To try other marker IDs without editing the arenas:</p>
 <pre><code>python test_all_markers.py 5 42 99      # selected IDs
 python test_all_markers.py --both       # IDs 0–99, with and without wind</code></pre>
-      <p>Full setup notes and troubleshooting are in the <a href="https://github.com/YOUR-USERNAME/YOUR-REPO#readme">README</a>.</p>
+      <p>Full setup notes and troubleshooting are in the <a href="https://github.com/dhyani-lakshay/Autonomous-Precision-Landing-on-Dynamic-Platforms/blob/main/README.md">README</a>.</p>
     </div>
   </section>
 
