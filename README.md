@@ -1,108 +1,309 @@
-# Autonomous Drone Landing on Dynamic Platforms
+# Autonomous Precision Landing on a Dynamic Platform
 
-A flight controller that makes a quadcopter find a moving rover, follow it, and land on it. The rover carries an ArUco marker, and the drone tracks that marker with its downward camera.
+A simulation-based flight controller for a quadrotor that detects,
+tracks, follows, and lands on a moving rover in PyBullet. The rover
+carries a visual marker observed by a downward-facing camera.
 
-Built for the **Intra IIT Tech Meet 1.0** problem *"Autonomous Precision Landing on Dynamic Platforms"* (PyBullet + OpenCV).
+The project was developed for the **Intra IIT Tech Meet 1.0** problem,
+**"Autonomous Precision Landing on Dynamic Platforms."**
 
 ## Features
 
-- **Works with any ArUco marker ID.** It reads the ID on its own, so the marker can be changed without touching the code.
-- **Keeps tracking close to the ground.** When the marker is too big for the camera to see whole, it keeps tracking by template matching.
-- **Handles wind.** It detects wind by itself and pushes back against it. The same file works in both the normal and the windy arena.
-- **Lands safely.** Touchdown is at about -0.35 m/s, well inside the -0.65 m/s limit, and the motors cut off on contact.
+-   Vision-based rover detection using OpenCV ArUco detection.
+-   Low-altitude tracking using model/template matching when the full
+    marker is no longer visible.
+-   Six-state Kalman filtering for rover position, velocity, and
+    acceleration estimation.
+-   Mahalanobis-distance validation to reject inconsistent visual
+    measurements.
+-   SEARCH → TRACK → DESCEND → FINAL → CUTOFF flight-state machine.
+-   Horizontal tracking using rover-acceleration feed-forward,
+    position/velocity feedback, and disturbance compensation.
+-   Scheduled vertical descent with controlled descent speed.
+-   External disturbance/wind estimation and compensation.
+-   Conversion of desired acceleration into attitude, thrust, and four
+    motor forces.
+-   Motor cut-off after the landing conditions are satisfied.
 
-## Files
+## Repository Structure
 
-| File | What it is |
+The repository contains the controller, supplied simulation arenas, marker-testing utility, technical report, and demonstration video.
+
+| File | Description |
 |---|---|
-| `controller.py` | The solution: the flight controller the arena runs |
-| `local_arena.py` | Test arena without wind (provided, not edited) |
-| `local_areana_wind.py` | Test arena with random wind gusts (provided, not edited) |
-| `test_all_markers.py` | Optional: tests many marker IDs automatically, without a window |
+| `controller.py` | Main flight controller and primary project implementation. |
+| `local_arena.py` | Supplied PyBullet arena without wind. |
+| `local_areana_wind.py` | Supplied PyBullet arena with dynamic wind disturbance. |
+| `test_all_markers.py` | Utility for testing the controller with different marker IDs. |
+| `Autonomous_Precision_Landing_Technical_Report.pdf` | Technical report describing the approach, algorithms, control system, and results. |
+| `demo_video.mp4` | Demonstration video of the autonomous landing system. |
+| `README.md` | Project setup, usage, and solution overview. |
 
-## Setup
+> The filename `local_areana_wind.py` is intentional and matches the supplied project file.
 
-You need Python 3.8 or newer.
+## Requirements
 
-```bash
+-   Python 3.8 or newer
+-   PyBullet
+-   NumPy
+-   OpenCV with the ArUco module (`opencv-contrib-python`)
+
+Install the required Python packages:
+
+``` bash
 pip install pybullet numpy opencv-contrib-python
 ```
 
-> Use `opencv-contrib-python` (version 4.7 or newer). The plain `opencv-python` package may not include the `cv2.aruco` module.
+## Setup
 
-## How to run
+1.  Place `controller.py`, `local_arena.py`, and `local_areana_wind.py`
+    in the same directory.
+2.  Install the dependencies listed above.
+3.  Use the supplied arena files to run the controller.
 
-Put all the files in the same folder, then run one of these:
+## Running the Controller
 
-```bash
-# Normal arena
+### Standard arena
+
+``` bash
 python local_arena.py
+```
 
-# Arena with wind
+### Wind-enabled arena
+
+``` bash
 python local_areana_wind.py
 ```
 
-A PyBullet window opens along with a camera window. The camera window shows what the drone sees and which phase it is in.
+The simulation opens a PyBullet window and a camera-view window. The
+camera view shows the visual input available to the controller.
 
-### Testing other marker IDs
+## Solution Overview
 
-To try a different marker, change the `0` in this line of the arena file:
+The controller executes at the simulation rate of **240 Hz**.
 
-```python
-marker_img = cv2.aruco.generateImageMarker(aruco_dict, 0, 7)
+``` text
+PyBullet Environment
+        ↓
+Drone + Downward Camera
+        ↓
+ArUco / Template Detection
+        ↓
+Camera-to-Deck Coordinate Transformation
+        ↓
+Kalman Rover State Estimation
+        ↓
+Mahalanobis Measurement Validation
+        ↓
+Relative Position / Velocity
+        ↓
+Flight-State Machine
+        ↓
+Horizontal + Vertical Control
+        ↓
+Desired Acceleration
+        ↓
+Attitude + Thrust
+        ↓
+Four-Motor Force Allocation
+        ↓
+Drone Motion
+        ↺
+Camera Feedback
 ```
 
-You can also use the test script, which does this for you without editing any files:
+### 1. Visual Detection
 
-```bash
-python test_all_markers.py 5 42 99        # these IDs, no wind
-python test_all_markers.py --wind 5 42    # these IDs, with wind
-python test_all_markers.py --both         # IDs 0-99, with and without wind (slow)
-python test_all_markers.py --gui 42       # watch one ID in the window
+At higher altitude, the complete marker is detected using OpenCV ArUco
+detection. At low altitude, the marker may extend beyond the camera
+image, so the controller uses a generated marker/platform model and
+template matching around the predicted rover position.
+
+### 2. Rover State Estimation
+
+The detected horizontal rover position is processed using a six-state
+Kalman filter:
+
+``` text
+[x, y, vx, vy, ax, ay]
 ```
 
-## How it works
+The filter predicts rover motion between visual measurements and
+corrects the prediction when an accepted measurement is available.
 
-Every simulation step, the controller goes through five stages:
+A Mahalanobis-distance test is applied before correction so that
+measurements inconsistent with the predicted state can be rejected.
 
-1. **Wind check.** It compares how the drone actually moved with how its motors should have moved it. Any difference is an outside force, which it treats as wind.
-2. **Find the marker.**
-   - From high up, OpenCV's ArUco detector finds the marker.
-   - Closer than about 1 m, the marker no longer fits in the camera. The code knows the marker's pattern, so it draws what the camera should see and matches that drawing against the real image.
-3. **Track the rover.** A Kalman filter estimates the rover's position, speed and acceleration. It keeps predicting the rover's position for the last few centimetres, when the camera is too close to see anything.
-4. **Pick a phase.**
+### 3. Flight-State Machine
 
-   ```
-   SEARCH → TRACK → DESCEND → FINAL → CUTOFF
-   ```
+``` text
+SEARCH → TRACK → DESCEND → FINAL → CUTOFF
+```
 
-   | Phase | What happens |
-   |---|---|
-   | SEARCH | Look for the marker |
-   | TRACK | Fly above the rover and match its speed |
-   | DESCEND | Go down, but only while lined up with the rover |
-   | FINAL | Last bit of descent, with the camera too close to see |
-   | CUTOFF | Turn the motors off on touchdown |
+  -----------------------------------------------------------------------
+  State                               Function
+  ----------------------------------- -----------------------------------
+  `SEARCH`                            Acquire the rover and establish a
+                                      valid estimate.
 
-   If the drone drifts off or loses the marker, it climbs back up and tries again.
-5. **Control the motors.** It works out the tilt and thrust needed to follow the rover, then splits the thrust between the four motors.
+  `TRACK`                             Follow the rover while maintaining
+                                      altitude.
 
-## Results
+  `DESCEND`                           Descend while maintaining position
+                                      and relative-velocity constraints.
 
-Tested in simulation using the arena's own physics and scorer:
+  `FINAL`                             Perform the controlled low-altitude
+                                      final descent.
 
-- All tested IDs landed successfully, both with and without wind.
-- The drone lands about 7–8 seconds after the start.
-- It usually lands within about 1–8 cm of the rover's centre. The allowed limit is 50 cm.
-- Low-altitude marker tracking was checked on all 100 IDs (0–99).
+  `CUTOFF`                            Set all motor forces to zero after
+                                      touchdown conditions are satisfied.
+  -----------------------------------------------------------------------
 
-## Settings you can change
+If alignment or visual-tracking conditions become unsuitable during
+descent, the controller reduces or stops descent and can return to
+tracking.
 
-All the main numbers are at the top of `controller.py` under `SETTINGS`, for example:
+### 4. Horizontal Control
 
-| Setting | Meaning |
-|---|---|
-| `CRUISE_Z` | Height while chasing the rover (default 3.0 m) |
-| `WIND_ON_N` / `WIND_OFF_N` | Force levels that turn wind mode on and off |
+The horizontal acceleration command is:
 
-To hide the camera overlay or the terminal messages, set `debug_view` or `verbose` to `False` in `FlightController.__init__`.
+\[ `\mathbf{a}`{=tex}*{xy} = `\mathbf{a}`{=tex}*{rover} +
+K_p`\mathbf{e}`{=tex}\_p + K_d`\mathbf{e}`{=tex}\_v -
+`\frac{\mathbf{F}_{wind,xy}}{m}`{=tex} \]
+
+Normal tracking uses:
+
+-   (K_p = 4.0)
+-   (K_d = 4.2)
+-   Maximum tilt = (22\^`\circ`{=tex})
+
+FINAL / low-altitude control uses:
+
+-   (K_p = 7.0)
+-   (K_d = 5.0)
+-   Maximum tilt = (15\^`\circ`{=tex})
+
+Additional tilt authority of (8\^`\circ`{=tex}) is available when wind
+is detected.
+
+### 5. Vertical Control
+
+The vertical acceleration command is:
+
+\[ a_z = 16(z\_{ref}-z) + 8(v\_{z,ref}-v_z) -
+`\frac{F_{wind,z}}{m}`{=tex} \]
+
+The controller uses a smooth altitude reference and limits the
+reference-velocity change to avoid abrupt descent commands. The final
+descent reference is approximately **−0.35 m/s**.
+
+### 6. Attitude and Motor Forces
+
+The desired physical force is:
+
+\[ `\mathbf{F}`{=tex}*{des} =
+m(`\mathbf{a}`{=tex}*{des}+`\mathbf{g}`{=tex}) \]
+
+Its normalized direction defines the desired thrust direction. The
+desired attitude is constructed while preserving the current yaw
+heading, followed by rotational control and four-motor force allocation.
+
+The motor arm length is:
+
+\[ L=0.25`\text{ m}`{=tex} \]
+
+The motor forces are constrained to be non-negative.
+
+## Wind / Disturbance Handling
+
+The controller estimates external force from the drone's measured change
+in velocity, previously applied thrust, and gravity:
+
+\[ `\mathbf{F}`{=tex}*{ext} =
+m`\frac{\Delta\mathbf{v}}{\Delta t}`{=tex} -
+`\mathbf{F}`{=tex}*{thrust} - `\mathbf{F}`{=tex}\_{gravity} \]
+
+The disturbance estimate is filtered before wind-state detection.
+
+  Parameter                                               Value
+  --------------------------- ---------------------------------
+  Wind ON threshold             0.30 N average horizontal force
+  Wind OFF threshold                                     0.12 N
+  Sample clipping                                 ±6 N per axis
+  Filtering                                 approximately 50 ms
+  Wind averaging                              approximately 1 s
+  Additional tilt authority                                 +8°
+
+Wind estimation is disabled near the landing deck so that contact forces
+are not interpreted as wind.
+
+## Key Simulation Parameters
+
+  Parameter                                         Value
+  --------------------------- ---------------------------
+  Controller / physics rate                        240 Hz
+  Physics timestep                                1/240 s
+  Gravity                                       9.81 m/s²
+  Drone mass                                      1.20 kg
+  Motor arm                                        0.25 m
+  Initial drone altitude                            3.0 m
+  Search altitude                                   3.6 m
+  Rover size                        1.0 m × 1.0 m × 0.1 m
+  Marker size                                       0.8 m
+  Camera resolution                          320 × 240 px
+  Vertical FOV                                        60°
+  Camera offset                 0.10 m below drone centre
+  Rover deck height                               0.102 m
+
+## Landing Constraints
+
+The supplied scorer uses the following conditions:
+
+  Condition                                                       Threshold
+  ------------------------------------- -----------------------------------
+  Ground collision                                            (z \< 0.08) m
+  Maximum touchdown vertical velocity                           (-0.65) m/s
+  Maximum touchdown tilt                  approximately (30\^`\circ`{=tex})
+  Rover surface                                                (z = 0.15) m
+  Horizontal touchdown region                                    (\< 0.5) m
+  Settled vertical velocity                                               (
+  Minimum scorer time                                              (\> 2) s
+
+The controller uses an internal cut-off height of approximately **0.152
+m** and requires horizontal distance below **0.35 m** before entering
+`CUTOFF`.
+
+## Recorded Simulation Results
+
+The following values correspond to the recorded no-wind and wind-enabled
+runs reported in the technical report. They are individual simulation
+runs, not a statistically representative multi-trial evaluation.
+
+  Parameter                         No Wind   Wind Enabled
+  ----------------------------- ----------- --------------
+  Landing time                       7.32 s         7.64 s
+  Touchdown height                  0.151 m        0.151 m
+  Touchdown vertical velocity     −0.18 m/s      −0.35 m/s
+  Horizontal touchdown error        0.008 m        0.011 m
+  Touchdown tilt                       4.9°           3.4°
+  Motor cut-off                   Confirmed      Confirmed
+
+## Limitations
+
+-   The current system is evaluated in simulation rather than on
+    physical UAV hardware.
+-   Visual tracking can become less reliable under severe marker
+    occlusion or complete visual loss.
+-   During extended visual loss, Kalman prediction can accumulate
+    position error.
+-   The simulated actuator and wind models do not fully represent real
+    quadrotor aerodynamics and actuator dynamics.
+
+## Future Improvements
+
+-   Validate the perception and control pipeline on a physical UAV.
+-   Fuse additional sensing sources to improve robustness during visual
+    loss.
+-   Use a more representative rover-motion model for prediction.
+-   Perform larger multi-trial evaluations across different
+    trajectories, initial conditions, and disturbance levels.
