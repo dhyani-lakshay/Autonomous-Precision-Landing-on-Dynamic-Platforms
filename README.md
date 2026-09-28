@@ -4,7 +4,9 @@ A simulation-based flight controller for a quadrotor that detects, tracks, follo
 
 The project was developed for the **Intra IIT Tech Meet 1.0** problem, **"Autonomous Precision Landing on Dynamic Platforms."**
 
-**Demo video:** [Watch the demo](https://github.com/dhyani-lakshay/Autonomous-Precision-Landing-on-Dynamic-Platforms/blob/main/demo_video.mp4) (also included as `demo_video.mp4`)
+## GitHub Page
+
+[View the GitHub Page](https://dhyani-lakshay.github.io/Autonomous-Precision-Landing-on-Dynamic-Platforms/)
 
 ## Features
 
