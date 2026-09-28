@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Autonomous Precision Landing on a Moving Rover</title>
+<meta name="description" content="A vision-guided quadrotor controller that finds, follows and lands on a moving rover in PyBullet, with or without wind.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛬</text></svg>">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+
+<!-- KaTeX renders the equations -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]});"></script>
+
+<style>
+  :root {
+    --bg: #e8ebee;          /* hangar grey */
+    --surface: #f7f8f9;
+    --ink: #17202b;
+    --muted: #55616e;
+    --line: #c8cfd6;
+    --accent: #e35a0e;      /* windsock orange */
+    --accent-ink: #b0440a;
+    --pad: #ffffff;
+    --cell: #1b1b1b;
+    --ground: #d7dce1;
+    --grid: #c3cad1;
+    --measure: #2d6cdf;     /* template-matching colour */
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141a21; --surface: #1c242d; --ink: #e5e9ed; --muted: #9ba7b3;
+      --line: #2f3a46; --accent: #ff7b35; --accent-ink: #ff9a63;
+      --pad: #eef1f4; --cell: #1b1b1b; --ground: #222b35; --grid: #2d3844; --measure: #6ea0ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141a21; --surface: #1c242d; --ink: #e5e9ed; --muted: #9ba7b3;
+    --line: #2f3a46; --accent: #ff7b35; --accent-ink: #ff9a63;
+    --pad: #eef1f4; --cell: #1b1b1b; --ground: #222b35; --grid: #2d3844; --measure: #6ea0ff;
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    font-variation-settings: "wdth" 100;
+  }
+  a { color: var(--accent-ink); text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+  img, video, svg { max-width: 100%; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  .prose { max-width: 68ch; }
+
+  /* ---------- Top bar ---------- */
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; }
+  .topbar .name { font-weight: 700; font-variation-settings: "wdth" 112; letter-spacing: .01em; }
+  .topbar nav { display: flex; gap: 20px; flex-wrap: wrap; }
+  .topbar nav a { color: var(--ink); text-decoration: none; font-size: .95rem; }
+  .topbar nav a:hover { color: var(--accent-ink); text-decoration: underline; }
+
+  /* ---------- Hero ---------- */
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: center; padding: 32px 0 72px; }
+  h1 {
+    font-size: clamp(2.4rem, 5.4vw, 4.2rem);
+    line-height: 1.02;
+    font-weight: 800;
+    font-variation-settings: "wdth" 125;
+    letter-spacing: -0.015em;
+    margin: 0 0 20px;
+  }
+  .lede { font-size: 1.2rem; color: var(--muted); max-width: 46ch; margin: 0 0 28px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn {
+    display: inline-block; padding: 11px 18px; border-radius: 4px; text-decoration: none;
+    font-weight: 600; border: 2px solid var(--ink); color: var(--ink);
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn:hover { transform: translateY(-1px); }
+
+  .sim { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px; }
+  .sim svg { display: block; width: 100%; height: auto; border-radius: 3px; }
+  .readout { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; font-variant-numeric: tabular-nums; }
+  .readout div { font-size: .8rem; color: var(--muted); }
+  .readout b { display: block; font-size: 1rem; color: var(--ink); font-weight: 600; }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 10px; font-size: .8rem; color: var(--muted); }
+  .legend span::before { content: ""; display: inline-block; width: 14px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid; }
+  .legend .l-aruco::before { border-color: var(--accent); }
+  .legend .l-model::before { border-color: var(--measure); border-top-style: dashed; }
+  .legend .l-blind::before { border-color: var(--muted); border-top-style: dotted; }
+  .sim-controls { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+  .sim-controls button {
+    font: inherit; font-size: .85rem; background: none; border: 1px solid var(--line); color: var(--ink);
+    border-radius: 4px; padding: 4px 12px; cursor: pointer;
+  }
+  .caption { font-size: .8rem; color: var(--muted); }
+
+  /* ---------- Sections ---------- */
+  section { padding: 64px 0; border-top: 1px solid var(--line); }
+  h2 {
+    font-size: clamp(1.7rem, 3.2vw, 2.3rem); line-height: 1.1; margin: 0 0 18px;
+    font-weight: 750; font-variation-settings: "wdth" 118; letter-spacing: -0.01em;
+  }
+  h3 { font-size: 1.15rem; margin: 32px 0 8px; font-weight: 700; }
+  p { margin: 0 0 16px; }
+  .two { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 48px; align-items: start; }
+
+  .figure { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px; }
+  .figure svg { display: block; width: 100%; height: auto; }
+
+  ol.phases { list-style: none; counter-reset: ph; padding: 0; margin: 24px 0 0; }
+  ol.phases li { counter-increment: ph; display: grid; grid-template-columns: 2.2rem 1fr; gap: 4px 12px; padding: 14px 0; border-top: 1px solid var(--line); }
+  ol.phases li::before { content: counter(ph); font-weight: 800; font-variation-settings: "wdth" 125; color: var(--accent); font-size: 1.3rem; line-height: 1.2; }
+  ol.phases strong { display: block; }
+  ol.phases span { color: var(--muted); grid-column: 2; }
+
+  .eq { overflow-x: auto; padding: 4px 0; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: .97rem; }
+  th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 650; }
+  td.num, th.num { text-align: right; }
+
+  pre {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+    padding: 14px 16px; overflow-x: auto; font-size: .9rem; line-height: 1.5;
+  }
+  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .92em; }
+  p code, td code, li code { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+
+  video { display: block; width: 100%; border-radius: 6px; background: #000; }
+  .note { font-size: .9rem; color: var(--muted); }
+
+  footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--muted); font-size: .9rem; }
+
+  @media (max-width: 860px) {
+    .hero, .two { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+    .hero { padding-bottom: 48px; }
+    .readout { grid-template-columns: repeat(2, 1fr); }
+    .topbar nav { gap: 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .btn:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="topbar">
+    <span class="name">Precision Landing</span>
+    <nav aria-label="Sections">
+      <a href="#landing">The landing</a>
+      <a href="#vision">Vision</a>
+      <a href="#control">Control</a>
+      <a href="#results">Results</a>
+      <a href="#run">Run it</a>
+    </nav>
+  </header>
+
+  <main>
+  <!-- ======================= HERO ======================= -->
+  <div class="hero">
+    <div>
+      <h1>Landing a quadcopter on a moving rover</h1>
+      <p class="lede">A flight controller that finds a rover by its ArUco marker, matches its speed, and sets down on it at 240 Hz. It works in calm air and in random wind.</p>
+      <div class="actions">
+        <a class="btn primary" href="#demo">Watch the demo</a>
+        <a class="btn" href="Autonomous_Precision_Landing_Technical_Report.pdf">Read the report</a>
+        <a class="btn" href="https://github.com/YOUR-USERNAME/YOUR-REPO">View the code</a>
+      </div>
+    </div>
+
+    <figure class="sim" style="margin:0">
+      <svg id="scene" viewBox="-2.6 -2.6 5.2 5.2" role="img"
+           aria-label="Top-down view following the rover. The drone's camera view shrinks onto the marker as it descends."></svg>
+      <div class="readout" aria-live="off">
+        <div>Time<b id="r-t">0.0 s</b></div>
+        <div>Altitude<b id="r-z">3.00 m</b></div>
+        <div>Phase<b id="r-mode">TRACK</b></div>
+        <div>Off centre<b id="r-e">0 cm</b></div>
+      </div>
+      <div class="legend">
+        <span class="l-aruco">Camera view, ArUco</span>
+        <span class="l-model">Template matching</span>
+        <span class="l-blind">Blind, predicted</span>
+      </div>
+      <div class="sim-controls">
+        <figcaption class="caption">Camera view following the rover, replayed from the controller's descent plan.</figcaption>
+        <button id="toggle" type="button">Pause</button>
+      </div>
+    </figure>
+  </div>
+
+  <!-- ======================= DEMO ======================= -->
+  <section id="demo">
+    <h2>Demo</h2>
+    <video controls preload="metadata" src="demo_video.mp4">
+      Your browser can't play this video. <a href="demo_video.mp4">Download the demo</a> instead.
+    </video>
+  </section>
+
+  <!-- ======================= LANDING ======================= -->
+  <section id="landing">
+    <div class="two">
+      <div class="prose">
+        <h2>The landing, phase by phase</h2>
+        <p>The drone starts 3 m up with the rover right below it, already driving away at about 1.7 m/s on a curving path. The controller never gets the rover's position from the simulator; everything it knows about the rover comes through the camera.</p>
+        <ol class="phases">
+          <li><strong>Search</strong><span>Find the marker. The first clean detection locks its ID.</span></li>
+          <li><strong>Track</strong><span>Hold 3 m and match the rover's motion. Move on after 0.6 s within 12 cm and 0.25 m/s of it.</span></li>
+          <li><strong>Descend</strong><span>Sink at 0.9, then 0.6, then 0.4 m/s. Slow down or stop if alignment slips; climb back to Track if the rover is lost.</span></li>
+          <li><strong>Final</strong><span>Below about 0.4 m the camera can't see the deck. Sink at 0.35 m/s on the Kalman prediction alone.</span></li>
+          <li><strong>Cut-off</strong><span>On contact, and within 35 cm of the centre, set all four motors to zero.</span></li>
+        </ol>
+      </div>
+      <figure class="figure" style="margin:0">
+        <svg id="profile" viewBox="0 0 560 360" role="img" aria-label="Altitude against time for one landing, shaded by flight phase."></svg>
+        <figcaption class="caption" style="margin-top:8px">Height reference over one landing. Touchdown comes at about 7.4 s, arriving at 0.35 m/s against a 0.65 m/s limit.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ======================= VISION ======================= -->
+  <section id="vision">
+    <div class="two">
+      <div class="prose">
+        <h2>Seeing the marker all the way down</h2>
+        <p>From high up, OpenCV's ArUco detector finds the whole marker. Every image point is projected onto the deck by intersecting its camera ray with the deck plane, using the drone's exact pose:</p>
+        <div class="eq">\[
+          \mathbf{r} = R\begin{bmatrix} -\tfrac{v-c_y}{f} \\ -\tfrac{u-c_x}{f} \\ -1 \end{bmatrix},\qquad
+          \mathbf{P} = \mathbf{C} + \frac{z_{deck}-C_z}{r_z}\,\mathbf{r},\qquad
+          f = \frac{120}{\tan 30^\circ} \approx 207.8\ \text{px}
+        \]</div>
+        <p>The camera's 60° field of view is vertical, so it sees a strip of ground about 1.15 times its height. Below roughly 1 m, the 0.8 m marker no longer fits and ArUco fails for every ID.</p>
+        <p>That is where template matching takes over. Having read the ID once, the controller redraws the exact black-and-white pattern, renders what the camera should see at the predicted rover position, and slides the real image over it with normalised cross-correlation. The best match gives the correction. It stays accurate until the camera is 17 cm from the deck.</p>
+        <p class="note">Checked on all 100 marker IDs: 1,200 low-altitude views, worst error 4.5 mm.</p>
+      </div>
+      <figure class="figure" style="margin:0">
+        <svg id="fov" viewBox="0 0 560 250" role="img" aria-label="Camera view compared with the marker at three heights: whole marker visible at 3 m, marker cut off at 0.8 m and 0.45 m."></svg>
+        <figcaption class="caption" style="margin-top:8px">What the camera covers at three heights, drawn to scale against the 1 m rover.</figcaption>
+      </figure>
+    </div>
+
+    <h3>Tracking the rover</h3>
+    <div class="prose">
+      <p>Each accepted measurement feeds a six-state Kalman filter that assumes roughly constant acceleration. It estimates velocity and acceleration from position alone, and keeps predicting through the final blind stretch.</p>
+      <div class="eq">\[
+        \mathbf{x} = \begin{bmatrix} x & y & v_x & v_y & a_x & a_y \end{bmatrix}^{T},\qquad
+        \begin{bmatrix} p\\ v\\ a \end{bmatrix}_{k+1} =
+        \begin{bmatrix} 1 & \Delta t & \tfrac12\Delta t^2 \\ 0 & 1 & \Delta t \\ 0 & 0 & 1 \end{bmatrix}
+        \begin{bmatrix} p\\ v\\ a \end{bmatrix}_{k}
+      \]</div>
+      <p>A measurement is only used if it is plausible given the estimate. The Mahalanobis distance must be under 40 for ArUco and under 25 for template matching:</p>
+      <div class="eq">\[
+        d^{2} = (\mathbf{z}-H\mathbf{x})^{T}\left(HPH^{T}+R_m\right)^{-1}(\mathbf{z}-H\mathbf{x})
+      \]</div>
+    </div>
+  </section>
+
+  <!-- ======================= CONTROL ======================= -->
+  <section id="control">
+    <h2>From error to motor forces</h2>
+    <div class="prose">
+      <p>The drone copies the rover's estimated acceleration, adds corrections for position and velocity error, and subtracts the estimated wind:</p>
+      <div class="eq">\[
+        \mathbf{a}_{xy} = \mathbf{a}_{rover} + K_p\,\mathbf{e}_p + K_d\,\mathbf{e}_v - \frac{\mathbf{F}_{wind,xy}}{m},\qquad
+        a_z = 16\,(z_{ref}-z) + 8\,(v_{z,ref}-v_z) - \frac{F_{wind,z}}{m}
+      \]</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>When</th><th class="num">\(K_p\)</th><th class="num">\(K_d\)</th><th class="num">Max tilt</th></tr></thead>
+          <tbody>
+            <tr><td>Tracking, above 1 m</td><td class="num">4.0</td><td class="num">4.2</td><td class="num">22°</td></tr>
+            <tr><td>Final, or below 1 m</td><td class="num">7.0</td><td class="num">5.0</td><td class="num">15°</td></tr>
+            <tr><td>Wind detected</td><td class="num">same</td><td class="num">same</td><td class="num">+8°</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p style="margin-top:20px">The wanted force sets the thrust direction. A geometric attitude controller tilts the drone towards it, keeping the current heading:</p>
+      <div class="eq">\[
+        \mathbf{F}_{des} = m(\mathbf{a}_{des} + g\hat{\mathbf{z}}),\qquad
+        \mathbf{e}_R = \tfrac12\,\mathrm{vee}\!\left(R_{des}^{T}R - R^{T}R_{des}\right),\qquad
+        \boldsymbol{\tau} = -I\omega_n^{2}\,\mathbf{e}_R - 2\zeta\omega_n I\,\boldsymbol{\omega}
+      \]</div>
+      <p>Here \(I = 0.018\ \text{kg·m}^2\), \(\omega_n = 14\) rad/s and \(\zeta = 0.9\). Total thrust is the part of the wanted force along the drone's current up-axis. It is split across the four motors, which sit at \(\pm L\) with \(L = 0.25\) m:</p>
+      <div class="eq">\[
+        \begin{aligned}
+        f_1 &= \tfrac{T}{4} + \tfrac{\tau_x}{4L} - \tfrac{\tau_y}{4L}, &
+        f_2 &= \tfrac{T}{4} + \tfrac{\tau_x}{4L} + \tfrac{\tau_y}{4L}, \\
+        f_3 &= \tfrac{T}{4} - \tfrac{\tau_x}{4L} - \tfrac{\tau_y}{4L}, &
+        f_4 &= \tfrac{T}{4} - \tfrac{\tau_x}{4L} + \tfrac{\tau_y}{4L}
+        \end{aligned}
+      \]</div>
+
+      <h3>Wind</h3>
+      <p>PyBullet updates velocity exactly, and the controller knows its own thrust and gravity. Whatever is left over is an outside force:</p>
+      <div class="eq">\[
+        \mathbf{F}_{ext} = m\,\frac{\Delta\mathbf{v}}{\Delta t} - \mathbf{F}_{thrust} - \mathbf{F}_{gravity}
+      \]</div>
+      <p>The estimate is smoothed over about 50 ms and always subtracted in the control law. In calm air it stays near zero, so one controller serves both arenas. When its 1-second average passes 0.30 N, wind mode adds 8° of tilt allowance; it switches off again below 0.12 N.</p>
+    </div>
+  </section>
+
+  <!-- ======================= RESULTS ======================= -->
+  <section id="results">
+    <h2>Results</h2>
+    <div class="prose">
+      <p>Two recorded runs from the technical report, using the supplied arenas and scorer unchanged.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Measure</th><th class="num">No wind</th><th class="num">Wind</th><th class="num">Scorer limit</th></tr></thead>
+          <tbody>
+            <tr><td>Landing time</td><td class="num">7.32 s</td><td class="num">7.64 s</td><td class="num">none</td></tr>
+            <tr><td>Touchdown vertical speed</td><td class="num">−0.18 m/s</td><td class="num">−0.35 m/s</td><td class="num">−0.65 m/s</td></tr>
+            <tr><td>Distance from rover centre</td><td class="num">0.008 m</td><td class="num">0.011 m</td><td class="num">0.5 m</td></tr>
+            <tr><td>Touchdown tilt</td><td class="num">4.9°</td><td class="num">3.4°</td><td class="num">30°</td></tr>
+            <tr><td>Motor cut-off</td><td class="num">Confirmed</td><td class="num">Confirmed</td><td class="num">required</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note" style="margin-top:12px">These are single runs, not a multi-trial evaluation.</p>
+    </div>
+  </section>
+
+  <!-- ======================= RUN ======================= -->
+  <section id="run">
+    <h2>Run it yourself</h2>
+    <div class="prose">
+      <p>You need Python 3.8 or newer and OpenCV 4.7 or newer with the ArUco module. The arenas call <code>generateImageMarker</code>, which older versions lack. Tested with Python 3.12, PyBullet 3.2.7, NumPy 2.4 and OpenCV 4.13.</p>
+<pre><code>pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python
+pip install pybullet numpy "opencv-contrib-python>=4.7"
+
+python local_arena.py          # calm air
+python local_areana_wind.py    # random wind gusts</code></pre>
+      <p>To try other marker IDs without editing the arenas:</p>
+<pre><code>python test_all_markers.py 5 42 99      # selected IDs
+python test_all_markers.py --both       # IDs 0–99, with and without wind</code></pre>
+      <p>Full setup notes and troubleshooting are in the <a href="https://github.com/YOUR-USERNAME/YOUR-REPO#readme">README</a>.</p>
+    </div>
+  </section>
+
+  <section id="limits">
+    <h2>Limitations</h2>
+    <div class="prose">
+      <p>Everything here runs in simulation, where the drone's pose is known exactly and there is no motor lag or drag. The last stretch of the descent relies on prediction, so a long loss of the marker lets the position error grow. A physical drone would need real state estimation and more sensors before any of this carries over.</p>
+    </div>
+  </section>
+  </main>
+
+  <footer>
+    Built for the Intra IIT Tech Meet 1.0 problem "Autonomous Precision Landing on Dynamic Platforms". Simulated in PyBullet, with vision in OpenCV.
+  </footer>
+</div>
+
+<script>
+(() => {
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs = {}, parent) => {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  };
+
+  // ---- Constants from controller.py and the arena ----
+  const DT = 1 / 240, DECK = 0.102, CAM = 0.10, TOUCH = 0.14, CUT = 0.152;
+  const FLOOR = DECK + CAM + 0.18;          // vision floor (drone height)
+  const VIEW_H = 2 * Math.tan(Math.PI / 6); // ground seen per metre of camera height (vertical)
+  const VIEW_W = VIEW_H * 320 / 240;
+  // ArUco ID 0 from DICT_5X5_100, row by row (1 = white)
+  const BITS = "0000000010100000101100011000010101001110000000000";
+
+  // ---- Replay one landing from the controller's own rules ----
+  function simulate() {
+    const frames = [];
+    let t = 0, rx = 0, ry = 0, dx = 0, dy = 0, dvx = 0, dvy = 0;
+    let z = 3.0, vz = 0, mode = "TRACK", aligned = 0;
+    const rv = (t) => [1.2 * Math.cos(0.4 * t) + 0.5 * Math.cos(1.1 * t),
+                       1.2 * Math.sin(0.3 * t) + 0.5 * Math.sin(0.9 * t)];
+    while (t < 12) {
+      const [vx, vy] = rv(t), [vx2, vy2] = rv(t + DT);
+      const ax = (vx2 - vx) / DT, ay = (vy2 - vy) / DT;
+      // Horizontal: feed-forward + PD, tilt-limited (as in _wanted_acceleration)
+      const low = mode === "FINAL" || z < 1.0;
+      const kp = low ? 7 : 4, kd = low ? 5 : 4.2, tilt = (low ? 15 : 22) * Math.PI / 180;
+      let ex = rx - dx, ey = ry - dy;
+      const en = Math.hypot(ex, ey); if (en > 1.5) { ex *= 1.5 / en; ey *= 1.5 / en; }
+      let axd = ax + kp * ex + kd * (vx - dvx), ayd = ay + kp * ey + kd * (vy - dvy);
+      const amax = 9.81 * Math.tan(tilt), an = Math.hypot(axd, ayd);
+      if (an > amax) { axd *= amax / an; ayd *= amax / an; }
+      dvx += axd * DT; dvy += ayd * DT; dx += dvx * DT; dy += dvy * DT;
+      rx += vx * DT; ry += vy * DT;
+
+      const err = Math.hypot(rx - dx, ry - dy), rel = Math.hypot(vx - dvx, vy - dvy);
+      // Phases (as in _update_mode)
+      if (mode === "TRACK") {
+        aligned = (err < 0.12 && rel < 0.25) ? aligned + DT : Math.max(0, aligned - 2 * DT);
+        if (aligned > 0.6) mode = "DESCEND";
+      } else if (mode === "DESCEND" && z < FLOOR + 0.03 && err < 0.15 && rel < 0.35) {
+        mode = "FINAL";
+      }
+      // Height plan (as in _update_height_reference)
+      let want = 0;
+      if (mode === "DESCEND") {
+        const h = z - TOUCH;
+        want = -(h > 1.6 ? 0.9 : h > 0.8 ? 0.6 : 0.4);
+      } else if (mode === "FINAL") want = -0.35;
+      vz += Math.max(-1.2 * DT, Math.min(1.2 * DT, want - vz));
+      z += vz * DT;
+
+      let source;
+      const camH = z - CAM - DECK;
+      if (camH * VIEW_H > 0.86) source = "aruco";
+      else if (z > FLOOR) source = "model";
+      else source = "blind";
+
+      frames.push({ t, rx, ry, dx, dy, z, mode, err, source });
+      if (mode === "FINAL" && z < CUT) {
+        frames.push({ t, rx, ry, dx, dy, z: TOUCH, mode: "CUTOFF", err, source: "off" });
+        break;
+      }
+      t += DT;
+    }
+    return frames;
+  }
+  const frames = simulate();
+  const tEnd = frames[frames.length - 1].t;
+
+  // ---- Hero: top-down view that follows the rover ----
+  const scene = document.getElementById("scene");
+  const world = el("g", {}, scene);         // moves so the rover stays centred
+  el("rect", { x: -40, y: -40, width: 80, height: 80, fill: "var(--ground)" }, world);
+  for (let i = -40; i <= 40; i++) {
+    el("line", { x1: i, y1: -40, x2: i, y2: 40, stroke: "var(--grid)", "stroke-width": 0.02 }, world);
+    el("line", { x1: -40, y1: i, x2: 40, y2: i, stroke: "var(--grid)", "stroke-width": 0.02 }, world);
+  }
+  const trail = el("polyline", { fill: "none", stroke: "var(--muted)", "stroke-width": 0.03, "stroke-dasharray": "0.08 0.08", opacity: 0.7 }, world);
+
+  // Rover: 1 m white pad with the 7×7 marker (SVG y is flipped: world +y is up)
+  const rover = el("g", {}, scene);
+  el("rect", { x: -0.5, y: -0.5, width: 1, height: 1, fill: "var(--pad)", stroke: "var(--line)", "stroke-width": 0.01 }, rover);
+  const cell = 0.8 / 7;
+  for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) {
+    if (BITS[r * 7 + c] === "0")
+      el("rect", { x: -0.4 + c * cell, y: -0.4 + r * cell, width: cell + 0.002, height: cell + 0.002, fill: "var(--cell)" }, rover);
+  }
+
+  // Camera footprint and drone
+  const view = el("rect", { fill: "none", "stroke-width": 0.035 }, scene);
+  const drone = el("g", {}, scene);
+  for (const [a, b] of [[1, 1], [-1, 1]]) {
+    el("line", { x1: -0.25 * a, y1: -0.25 * b, x2: 0.25 * a, y2: 0.25 * b, stroke: "var(--ink)", "stroke-width": 0.04 }, drone);
+  }
+  for (const [a, b] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    el("circle", { cx: 0.25 * a, cy: 0.25 * b, r: 0.12, fill: "none", stroke: "var(--ink)", "stroke-width": 0.025 }, drone);
+  }
+  el("rect", { x: -0.1, y: -0.1, width: 0.2, height: 0.2, fill: "var(--ink)" }, drone);
+
+  const R = { t: r("r-t"), z: r("r-z"), mode: r("r-mode"), e: r("r-e") };
+  function r(id) { return document.getElementById(id); }
+  const phaseName = { TRACK: "Track", DESCEND: "Descend", FINAL: "Final", CUTOFF: "Cut-off" };
+
+  function draw(f, idx) {
+    world.setAttribute("transform", `translate(${-f.rx} ${f.ry})`);
+    const pts = [];
+    for (let i = 0; i <= idx; i += 12) pts.push(`${frames[i].rx},${-frames[i].ry}`);
+    trail.setAttribute("points", pts.join(" "));
+
+    const ox = f.dx - f.rx, oy = -(f.dy - f.ry);
+    drone.setAttribute("transform", `translate(${ox} ${oy})`);
+    const camH = Math.max(f.z - CAM - DECK, 0.02);
+    // image-up = world +x, so the long image side lies along world y
+    const w = camH * VIEW_H, h = camH * VIEW_W;
+    view.setAttribute("x", ox - w / 2); view.setAttribute("y", oy - h / 2);
+    view.setAttribute("width", w); view.setAttribute("height", h);
+    const styles = {
+      aruco: ["var(--accent)", "none"], model: ["var(--measure)", "0.12 0.07"],
+      blind: ["var(--muted)", "0.03 0.06"], off: ["transparent", "none"]
+    };
+    view.setAttribute("stroke", styles[f.source][0]);
+    view.setAttribute("stroke-dasharray", styles[f.source][1]);
+    drone.setAttribute("opacity", f.mode === "CUTOFF" ? 0.55 : 1);
+
+    R.t.textContent = f.t.toFixed(1) + " s";
+    R.z.textContent = f.z.toFixed(2) + " m";
+    R.mode.textContent = phaseName[f.mode];
+    R.e.textContent = Math.round(f.err * 100) + " cm";
+  }
+
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const btn = document.getElementById("toggle");
+  let playing = !reduce, start = null, pausedAt = 0;
+  const HOLD = 2.0; // seconds to rest on touchdown before looping
+  btn.textContent = playing ? "Pause" : "Play";
+
+  function frameAt(time) {
+    const idx = Math.min(frames.length - 1, Math.floor(time / DT));
+    draw(frames[idx], idx);
+  }
+  function loop(now) {
+    if (!playing) return;
+    if (start === null) start = now - pausedAt * 1000;
+    let s = (now - start) / 1000;
+    if (s > tEnd + HOLD) { start = now; s = 0; }
+    pausedAt = s;
+    frameAt(Math.min(s, tEnd + DT));
+    requestAnimationFrame(loop);
+  }
+  btn.addEventListener("click", () => {
+    playing = !playing;
+    btn.textContent = playing ? "Pause" : "Play";
+    if (playing) { start = null; requestAnimationFrame(loop); }
+  });
+  if (playing) requestAnimationFrame(loop); else frameAt(tEnd + DT);
+
+  // ---- Altitude profile chart ----
+  const prof = document.getElementById("profile");
+  const W = 560, H = 360, L = 52, Rm = 16, T = 16, B = 44;
+  const tx = (t) => L + (t / Math.ceil(tEnd)) * (W - L - Rm);
+  const ty = (z) => T + (1 - z / 3.2) * (H - T - B);
+  // Phase bands
+  const bands = [];
+  let cur = frames[0].mode, from = 0;
+  frames.forEach((f) => { if (f.mode !== cur) { bands.push([cur, from, f.t]); cur = f.mode; from = f.t; } });
+  const bandFill = { TRACK: 0.0, DESCEND: 0.06, FINAL: 0.14 };
+  bands.forEach(([m, a, b]) => {
+    el("rect", { x: tx(a), y: T, width: Math.max(0, tx(b) - tx(a)), height: H - T - B,
+                 fill: "var(--accent)", "fill-opacity": bandFill[m] ?? 0 }, prof);
+    const label = el("text", { x: (tx(a) + tx(b)) / 2, y: T + 16, "text-anchor": "middle",
+                               "font-size": 12, fill: "var(--muted)" }, prof);
+    label.textContent = phaseName[m];
+  });
+  // Axes and grid
+  for (let z = 0; z <= 3; z += 1) {
+    el("line", { x1: L, x2: W - Rm, y1: ty(z), y2: ty(z), stroke: "var(--line)", "stroke-width": 1 }, prof);
+    const t = el("text", { x: L - 8, y: ty(z) + 4, "text-anchor": "end", "font-size": 12, fill: "var(--muted)" }, prof);
+    t.textContent = z + " m";
+  }
+  for (let s = 0; s <= Math.ceil(tEnd); s += 1) {
+    const t = el("text", { x: tx(s), y: H - B + 20, "text-anchor": "middle", "font-size": 12, fill: "var(--muted)" }, prof);
+    t.textContent = s + " s";
+  }
+  // Vision floor
+  el("line", { x1: L, x2: W - Rm, y1: ty(FLOOR), y2: ty(FLOOR), stroke: "var(--muted)", "stroke-dasharray": "4 4" }, prof);
+  const fl = el("text", { x: W - Rm, y: ty(FLOOR) - 6, "text-anchor": "end", "font-size": 12, fill: "var(--muted)" }, prof);
+  fl.textContent = "camera stops seeing the deck";
+  // Height line
+  const pts = frames.filter((_, i) => i % 6 === 0).map((f) => `${tx(f.t).toFixed(1)},${ty(f.z).toFixed(1)}`);
+  pts.push(`${tx(tEnd).toFixed(1)},${ty(TOUCH).toFixed(1)}`);
+  el("polyline", { points: pts.join(" "), fill: "none", stroke: "var(--ink)", "stroke-width": 2.5 }, prof);
+  el("circle", { cx: tx(tEnd), cy: ty(TOUCH), r: 5, fill: "var(--accent)" }, prof);
+  const td = el("text", { x: tx(tEnd) - 8, y: ty(TOUCH) - 10, "text-anchor": "end", "font-size": 12, fill: "var(--ink)" }, prof);
+  td.textContent = "touchdown";
+
+  // ---- Field-of-view comparison figure ----
+  const fov = document.getElementById("fov");
+  const heights = [[3.0, "3 m"], [0.8, "0.8 m"], [0.45, "0.45 m"]];
+  const S = 52; // px per metre
+  heights.forEach(([z, label], i) => {
+    const cx = 95 + i * 185, cy = 112;
+    const g = el("g", {}, fov);
+    const clip = el("clipPath", { id: "clip" + i }, fov);
+    const camH = z - CAM - DECK, w = camH * VIEW_W * S, h = camH * VIEW_H * S;
+    const vw = Math.min(w, 170), vh = Math.min(h, 170);
+    el("rect", { x: cx - vw / 2, y: cy - vh / 2, width: vw, height: vh }, clip);
+    const inner = el("g", { "clip-path": `url(#clip${i})` }, g);
+    el("rect", { x: cx - 100, y: cy - 100, width: 200, height: 200, fill: "var(--ground)" }, inner);
+    el("rect", { x: cx - 0.5 * S, y: cy - 0.5 * S, width: S, height: S, fill: "var(--pad)" }, inner);
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) {
+      if (BITS[r * 7 + c] === "0")
+        el("rect", { x: cx - 0.4 * S + c * cell * S, y: cy - 0.4 * S + r * cell * S,
+                     width: cell * S + 0.5, height: cell * S + 0.5, fill: "var(--cell)" }, inner);
+    }
+    const fits = camH * VIEW_H > 0.86;
+    el("rect", { x: cx - vw / 2, y: cy - vh / 2, width: vw, height: vh, fill: "none",
+                 stroke: fits ? "var(--accent)" : "var(--measure)", "stroke-width": 2,
+                 "stroke-dasharray": fits ? "none" : "6 4" }, g);
+    const t1 = el("text", { x: cx, y: 222, "text-anchor": "middle", "font-size": 14, "font-weight": 650, fill: "var(--ink)" }, g);
+    t1.textContent = label;
+    const t2 = el("text", { x: cx, y: 240, "text-anchor": "middle", "font-size": 12, fill: "var(--muted)" }, g);
+    t2.textContent = fits ? "ArUco sees it all" : "template matching";
+  });
+})();
+</script>
+</body>
+</html>
